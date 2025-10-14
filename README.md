@@ -6,4 +6,5 @@ diferencias observadas son estadísticamente significativas o producto del azar 
 El propósito del ejercicio es vincular lo aprendido sobre intervalos de confianza con el razonamiento  y la interpretación de una prueba de hipótesis, explorando cómo los errores tipo I y tipo II influyen 
 en la toma de decisiones basadas en evidencia.
 
-En la carpeta de documentos se encuentra el documento de la actividad a desarrollar
+- En la carpeta de documentos se encuentra el documento de la actividad a desarrollar
+- En la carpeta de datos, se encuentra la base de datos del Banco Mundial (World Development Indicators)
