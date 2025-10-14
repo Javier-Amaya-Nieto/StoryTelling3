@@ -1,0 +1,220 @@
+---
+title: "Actividad práctica 3: Pruebas de hipótesis y comparación de grupos"
+subtitle: "Facultad de Economía, Universidad de los Andes"
+author: "Camila Caraballo, Laura Rivera y Javier Amaya Nieto"
+date: "2025-10-15"
+output: html_document
+---
+
+# Setup del ambiente
+
+```{r, include=FALSE}
+# Instalando pacman si se requier
+if (!require("pacman")) install.packages("pacman")
+
+# Cargando los paquetes usando pacman
+pacman::p_load(
+  
+  # A) Manipulación, limpieza y visualización de datos
+  tidyverse,    # Colección de paquetes esenciales (incluye dplyr, ggplot2, etc.)
+  forcats,      # Herramientas para trabajar con variables categóricas (factores).
+  tibble,       # Implementación moderna de data.frames.
+  janitor,      # Limpieza de nombres de variables y tablas de frecuencia.
+  lubridate,    # Manejo avanzado de fechas y horas.
+  skimr,        # Resúmenes estadísticos completos y rápidos de data.frames.
+  stringi,      # Manipulación robusta de texto (strings).
+  scales,       # Formato de escalas en ggplot2 (ej. porcentajes, comas).
+  openxlsx,     # Guardar excel
+  writexl,      # Guardar excel
+
+  # B) Modelado y análisis estadístico/econométrico
+  fixest,       # Estimación de modelos de efectos fijos de alto rendimiento.
+  plm,          # Modelos econométricos para datos de panel.
+  AER,          # Herramientas para econometría aplicada (ej. variables instrumentales).
+  lmtest,       # Pruebas de hipótesis para modelos de regresión (ej. coeftest).
+  sandwich,     # Cálculo de errores estándar robustos a heterocedasticidad.
+  survey,       # Análisis de datos de encuestas complejas (ponderación, estratificación).
+
+  # C) Importación, exportación y generación de reportes
+  haven,        # Lectura y escritura de formatos de Stata, SAS y SPSS.
+  readxl,       # Lectura de archivos de Excel (.xls y .xlsx).
+  stargazer,    # Creación de tablas de regresión con formato de publicación.
+  knitr         # Generación de reportes dinámicos.
+)
+
+# Cambiar directorio de trabajo
+setwd("C:/1. MECA/2025/EXPLORACIÓN Y VISUALIZACIÓN DE DATOS- Miguel Andres Garzón/StoryTelling3/Datos")
+
+# Cargar archivo Excel (Leer la PRIMERA hoja del Excel)
+data0 <- read_excel("World_bank_indicadors.xlsx", sheet = 1)
+```
+
+# PARTE 0: Situación
+
+Usando datos del Banco Mundial (World Development Indicators) debemos comparar las emisiones de CO₂ per cápita entre países con PIB per cápita alto y bajo, estimar la diferencia promedio, su error estándar y un intervalo de confianza del 95 %, para posteriormente evaluar si la diferencia observada es estadísticamente significativa mediante una prueba de hipótesis bilateral o unilateral, según la justificación teórica.
+
+# PARTE 1: Planteamiento conceptual y formulación de hipótesis
+
+Ver documento (redactar esto)
+
+# PARTE 2: Evidencia empírica y estimación
+```{r}
+### 1. LIMPIEZA DE DATOS
+
+# Convertir a data frame
+data0 <- as.data.frame(data0)
+
+# Renombrar columnas a nombres válidos
+colnames(data0) <- make.names(colnames(data0))
+
+# Reemplazar ".." por NA y convertir a numérico
+data0 <- data0 %>%
+  mutate(valor_2023 = na_if(X2023..YR2023., ".."),
+         valor_2023 = as.numeric(gsub(",", ".", valor_2023)))
+
+# Agrupar, filtrar países sin NA, desagrupar
+data1 <- data0 %>%
+  group_by(Country.Name) %>%
+  filter(!any(is.na(valor_2023))) %>%
+  ungroup()
+
+### 2. ORGANIZAR LA BASE POR NIVEL DEL PIB
+
+# Dividemos la base de datos en 2 grupos tomando en cuenta la media del PIB per cápita 
+
+# 1. Calcular la media del PIB per cápita
+media_pib <- data1 %>%
+  filter(Series.Name == "GDP per capita (current US$)") %>%
+  summarise(media = mean(valor_2023, na.rm = TRUE)) %>%
+  pull(media)
+
+# 2. Crear tabla de clasificación por país (solo usando PIB)
+clasificacion <- data1 %>%
+  filter(Series.Name == "GDP per capita (current US$)") %>%
+  mutate(
+    grupo_pib = if_else(valor_2023 < media_pib, 0, 1)
+  ) %>%
+  select(Country.Name, grupo_pib)
+
+# 3. Unir esa clasificación a la base original
+data1 <- data1 %>%
+  left_join(clasificacion, by = "Country.Name")
+
+# 4. Verificar resultado
+data1 %>%
+  arrange(Country.Name, Series.Name) %>%
+  select(Country.Name, Series.Name, valor_2023, grupo_pib) %>%
+  head(10)
+
+# Nos quedamos solo con las variables de interés
+data2 <- data1 %>%
+  select(Country.Name, Series.Name, valor_2023, grupo_pib)
+
+
+### 3. FILTRAR VARIABLES DE INTERES 
+
+# Filtrar solo observaciones de CO2
+data_co2 <- data2 %>%
+  filter(grepl("CO2", Series.Name, ignore.case = TRUE)) %>%   # busca solo "CO2"
+  filter(!is.na(grupo_pib) & !is.na(valor_2023)) %>%
+  mutate(grupo_pib = as.integer(grupo_pib))
+
+# Revisar tamaños y medias por grupo
+data_co2 %>% group_by(grupo_pib) %>% 
+  summarise(n = n(), 
+            mean = mean(valor_2023), 
+            sd = sd(valor_2023))
+
+### 4. PRUEBAS DE HIPOTESIS E INTERVALOS 
+
+set.seed(1234)   # reproducibilidad
+
+# Calcular estadísticas por grupo y prueba t 
+res_param <- data_co2 %>%
+  group_by(grupo_pib) %>%
+  summarise(
+    n = n(),
+    media = mean(valor_2023, na.rm = TRUE),
+    sd = sd(valor_2023, na.rm = TRUE),
+    se_param = sd / sqrt(n),
+    tcrit = qt(0.975, df = n - 1),
+    CI_low_param = media - tcrit * se_param,
+    CI_high_param = media + tcrit * se_param
+  )
+
+print(res_param)
+
+# Prueba t directa entre grupos
+t_test <- t.test(valor_2023 ~ grupo_pib, data = data_co2, var.equal = FALSE)
+print(t_test)
+
+### 5. ESTIMACIÓN CON BOOTSTRAP
+
+B <- 1000  # número de replicaciones bootstrap
+boot_stats <- data.frame(grupo = integer(), boot_se = numeric(), CI_lo = numeric(), CI_hi = numeric(), stringsAsFactors = FALSE)
+
+for (g in sort(unique(data_co2$grupo_pib))) {
+  x <- data_co2 %>% filter(grupo_pib == g) %>% pull(valor_2023)
+  n <- length(x)
+  boot_means <- replicate(B, mean(sample(x, size = n, replace = TRUE)))
+  boot_se <- sd(boot_means)
+  ci <- quantile(boot_means, c(0.025, 0.975))
+  boot_stats <- rbind(boot_stats, data.frame(grupo = g, boot_se = boot_se, CI_lo = ci[1], CI_hi = ci[2]))
+}
+
+print(boot_stats)
+
+# Bootstrap para la diferencia de medias
+x0 <- data_co2 %>% filter(grupo_pib == 0) %>% pull(valor_2023)
+x1 <- data_co2 %>% filter(grupo_pib == 1) %>% pull(valor_2023)
+n0 <- length(x0); n1 <- length(x1)
+
+obs_diff <- mean(x1) - mean(x0)
+
+# Bootstrap resampling
+B <- 1000
+boot_diff <- replicate(B, {
+  m0 <- mean(sample(x0, size = n0, replace = TRUE))
+  m1 <- mean(sample(x1, size = n1, replace = TRUE))
+  m1 - m0
+})
+
+# Bootstrap SE Y CI
+boot_diff_se <- sd(boot_diff)
+boot_diff_ci <- quantile(boot_diff, c(0.025, 0.975))
+
+# Bootstrap p-value (two-sided)
+p_boot <- mean(abs(boot_diff) >= abs(obs_diff))
+
+diff_results <- data.frame(
+  estadistico = c("obs_diff","boot_se","boot_CI_lo","boot_CI_hi","p_boot_two_sided"),
+  valor = c(obs_diff, boot_diff_se, boot_diff_ci[1], boot_diff_ci[2], p_boot)
+)
+print(diff_results)
+
+### 6. VISUALIZACIÓN DEL BOOTSTRAP
+hist_df <- data.frame(boot_diff = boot_diff)
+ggplot(hist_df, aes(x = boot_diff)) +
+  geom_histogram(bins = 60) +
+  geom_vline(xintercept = obs_diff, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = boot_diff_ci, color = "blue") +
+  labs(title = "Distribución con bootstrap (grupo1 - grupo0)",
+       subtitle = paste0("obs diff = ", round(obs_diff, 3),
+                         "; 95% CI (boot) = [", round(boot_diff_ci[1],3), ", ", round(boot_diff_ci[2],3), "]"),
+       x = "Diferencia en media CO2", y = "Frequencia")
+
+### 7. RESULTADOS RESUMIDOS
+cat("\nResumen final:\n")
+cat(sprintf("Grupo 0: n=%d, media=%.4f, CI_boot=[%.4f, %.4f]\n",
+            n0, mean(x0), boot_stats$CI_lo[boot_stats$grupo==0], boot_stats$CI_hi[boot_stats$grupo==0]))
+cat(sprintf("Grupo 1: n=%d, media=%.4f, CI_boot=[%.4f, %.4f]\n",
+            n1, mean(x1), boot_stats$CI_lo[boot_stats$grupo==1], boot_stats$CI_hi[boot_stats$grupo==1]))
+cat(sprintf("Diferencia observada (grupo1 - grupo0) = %.4f\n", obs_diff))
+cat(sprintf("Bootstrap SE de la diferencia = %.4f\n", boot_diff_se))
+cat(sprintf("Bootstrap 95%% CI para la diferencia = [%.4f, %.4f]\n", boot_diff_ci[1], boot_diff_ci[2]))
+cat(sprintf("p-valor bootstrap (dos colas) aproximado = %.4f\n", p_boot))
+```
+
+
+# PARTE 3: Interpretación y reflexión sobre la decisión estadística
+Ver documento (redactar esto)
