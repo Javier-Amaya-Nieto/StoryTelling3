@@ -5,3 +5,5 @@ se asocia con mayores emisiones de CO₂ per cápita, y para ello propone usar d
 diferencias observadas son estadísticamente significativas o producto del azar muestral. 
 El propósito del ejercicio es vincular lo aprendido sobre intervalos de confianza con el razonamiento  y la interpretación de una prueba de hipótesis, explorando cómo los errores tipo I y tipo II influyen 
 en la toma de decisiones basadas en evidencia.
+
+En la carpeta de documentos se encuentra el documento de la actividad a desarrollar
