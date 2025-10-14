@@ -55,9 +55,10 @@ Usando datos del Banco Mundial (World Development Indicators) debemos comparar l
 
 # PARTE 1: Planteamiento conceptual y formulación de hipótesis
 
-Ver documento (redactar esto)
+## Punto 1 al 3 Ver documento (redactar esto)
 
-# PARTE 2: Evidencia empírica y estimación
+## Punto 4. Definir los indicadores
+
 ```{r}
 ### 1. LIMPIEZA DE DATOS
 
@@ -78,9 +79,11 @@ data1 <- data0 %>%
   filter(!any(is.na(valor_2023))) %>%
   ungroup()
 
-### 2. ORGANIZAR LA BASE POR NIVEL DEL PIB
+### 2. ORGANIZAR LA BASE POR LAS VARIABLES DE CLASIFICAICÓN (X)
 
 # Dividemos la base de datos en 2 grupos tomando en cuenta la media del PIB per cápita 
+
+####Explique por qué usa ese criterio (hace falta)
 
 # 1. Calcular la media del PIB per cápita
 media_pib <- data1 %>%
@@ -110,7 +113,6 @@ data1 %>%
 data2 <- data1 %>%
   select(Country.Name, Series.Name, valor_2023, grupo_pib)
 
-
 ### 3. FILTRAR VARIABLES DE INTERES 
 
 # Filtrar solo observaciones de CO2
@@ -124,12 +126,89 @@ data_co2 %>% group_by(grupo_pib) %>%
   summarise(n = n(), 
             mean = mean(valor_2023), 
             sd = sd(valor_2023))
+```
 
-### 4. PRUEBAS DE HIPOTESIS E INTERVALOS 
+# PARTE 2: Evidencia empírica y estimación
+
+### Punto 1. Describa brevemente los datos
+```{r}
+### 4. ANALISIS UNIVARIADO Y ESTADÍSTICAS
+
+# Número total de países en la base
+num_paises <- length(unique(data2$Country.Name))
+cat("Número total de países en la base:", num_paises, "\n")
+
+# Año de referencia (ya definido en la columna 'valor_2023')
+cat("Año de referencia de los datos: 2023\n")
+
+# Valores mínimos y máximos del PIB per cápita (US$ corrientes)
+pib_summary <- data2 %>%
+  filter(Series.Name == "GDP per capita (current US$)") %>%
+  summarise(
+    min_pib = min(valor_2023, na.rm = TRUE),
+    max_pib = max(valor_2023, na.rm = TRUE),
+    mean_pib = mean(valor_2023, na.rm = TRUE),
+    sd_pib = sd(valor_2023, na.rm = TRUE)
+  )
+
+print(pib_summary)
+
+# Valores mínimos y máximos de emisiones de CO₂ per cápita
+co2_summary <- data2 %>%
+  filter(grepl("CO2", Series.Name, ignore.case = TRUE)) %>%
+  summarise(
+    min_co2 = min(valor_2023, na.rm = TRUE),
+    max_co2 = max(valor_2023, na.rm = TRUE),
+    mean_co2 = mean(valor_2023, na.rm = TRUE),
+    sd_co2 = sd(valor_2023, na.rm = TRUE)
+  )
+
+print(co2_summary)
+
+# Estadísticas descriptivas de CO₂ por grupo de ingreso
+stats_grupo <- data_co2 %>%
+  group_by(grupo_pib) %>%
+  summarise(
+    n_paises = n_distinct(Country.Name),
+    media_CO2 = mean(valor_2023, na.rm = TRUE),
+    mediana_CO2 = median(valor_2023, na.rm = TRUE),
+    sd_CO2 = sd(valor_2023, na.rm = TRUE),
+    min_CO2 = min(valor_2023, na.rm = TRUE),
+    max_CO2 = max(valor_2023, na.rm = TRUE)
+  ) %>%
+  mutate(
+    grupo = ifelse(grupo_pib == 0, "PIB bajo", "PIB alto")
+  ) %>%
+  select(grupo, everything(), -grupo_pib)
+print(stats_grupo)
+
+```
+### Punto 2. Estime la diferencia promedio de emisiones entre los grupos 
+
+```{r}
+### 5. DIFERENCIA PROMEDIO 
 
 set.seed(1234)   # reproducibilidad
 
-# Calcular estadísticas por grupo y prueba t 
+# Separar los grupos
+x0 <- data_co2 %>% filter(grupo_pib == 0) %>% pull(valor_2023)   # PIB bajo
+x1 <- data_co2 %>% filter(grupo_pib == 1) %>% pull(valor_2023)   # PIB alto
+
+# Calcular diferencia promedio (PIB alto - PIB bajo)
+obs_diff <- mean(x1, na.rm = TRUE) - mean(x0, na.rm = TRUE)
+
+cat("DIFERENCIA PROMEDIO DE EMISIONES ENTRE GRUPOS\n")
+cat("------------------------------------------------------------\n")
+cat("Promedio PIB bajo :", round(mean(x0, na.rm = TRUE), 3), "ton CO₂ per cápita\n")
+cat("Promedio PIB alto :", round(mean(x1, na.rm = TRUE), 3), "ton CO₂ per cápita\n")
+cat("Diferencia observada (PIB alto - PIB bajo):", round(obs_diff, 3), "\n")
+```
+```{r}
+# PARTE 6 — DIFERENCIA DE EMISIONES ENTRE GRUPOS DE PIB
+set.seed(1234)   # Reproducibilidad
+
+# 1. ESTADÍSTICAS POR GRUPO Y PRUEBA T
+# Calcular estadísticas básicas por grupo
 res_param <- data_co2 %>%
   group_by(grupo_pib) %>%
   summarise(
@@ -142,78 +221,115 @@ res_param <- data_co2 %>%
     CI_high_param = media + tcrit * se_param
   )
 
+cat("Resumen de estadísticas por grupo:\n")
 print(res_param)
 
-# Prueba t directa entre grupos
+# Prueba t de diferencia de medias (PIB alto vs PIB bajo)
 t_test <- t.test(valor_2023 ~ grupo_pib, data = data_co2, var.equal = FALSE)
+
+cat("\nPrueba t de diferencia de medias:\n")
 print(t_test)
 
-### 5. ESTIMACIÓN CON BOOTSTRAP
+# Extraer valores clave de la prueba t
+ci_t_low  <- t_test$conf.int[1]
+ci_t_high <- t_test$conf.int[2]
+p_valor_t <- t_test$p.value
 
-B <- 1000  # número de replicaciones bootstrap
-boot_stats <- data.frame(grupo = integer(), boot_se = numeric(), CI_lo = numeric(), CI_hi = numeric(), stringsAsFactors = FALSE)
 
+# 7. ESTIMACIÓN CON BOOTSTRAP
+B <- 1000  # Número de replicaciones bootstrap
+boot_stats <- data.frame(grupo = integer(),
+                         boot_se = numeric(),
+                         CI_lo = numeric(),
+                         CI_hi = numeric())
+
+# Estimación bootstrap por grupo
 for (g in sort(unique(data_co2$grupo_pib))) {
   x <- data_co2 %>% filter(grupo_pib == g) %>% pull(valor_2023)
   n <- length(x)
   boot_means <- replicate(B, mean(sample(x, size = n, replace = TRUE)))
   boot_se <- sd(boot_means)
   ci <- quantile(boot_means, c(0.025, 0.975))
-  boot_stats <- rbind(boot_stats, data.frame(grupo = g, boot_se = boot_se, CI_lo = ci[1], CI_hi = ci[2]))
+  boot_stats <- rbind(boot_stats,
+                      data.frame(grupo = g, boot_se = boot_se, CI_lo = ci[1], CI_hi = ci[2]))
 }
 
+cat("\nIntervalos bootstrap por grupo:\n")
 print(boot_stats)
 
-# Bootstrap para la diferencia de medias
+# 8. BOOTSTRAP PARA LA DIFERENCIA DE MEDIAS
+# Definir los grupos
 x0 <- data_co2 %>% filter(grupo_pib == 0) %>% pull(valor_2023)
 x1 <- data_co2 %>% filter(grupo_pib == 1) %>% pull(valor_2023)
 n0 <- length(x0); n1 <- length(x1)
 
+# Diferencia observada
 obs_diff <- mean(x1) - mean(x0)
 
-# Bootstrap resampling
-B <- 1000
+# Bootstrap de la diferencia
 boot_diff <- replicate(B, {
   m0 <- mean(sample(x0, size = n0, replace = TRUE))
   m1 <- mean(sample(x1, size = n1, replace = TRUE))
   m1 - m0
 })
 
-# Bootstrap SE Y CI
+# Estadísticos bootstrap
 boot_diff_se <- sd(boot_diff)
 boot_diff_ci <- quantile(boot_diff, c(0.025, 0.975))
-
-# Bootstrap p-value (two-sided)
 p_boot <- mean(abs(boot_diff) >= abs(obs_diff))
 
+# Resultados resumidos de la diferencia
 diff_results <- data.frame(
   estadistico = c("obs_diff","boot_se","boot_CI_lo","boot_CI_hi","p_boot_two_sided"),
   valor = c(obs_diff, boot_diff_se, boot_diff_ci[1], boot_diff_ci[2], p_boot)
 )
+
+cat("\nResultados bootstrap para la diferencia de medias:\n")
 print(diff_results)
 
-### 6. VISUALIZACIÓN DEL BOOTSTRAP
+# 9. EVALUACIÓN DE LA EVIDENCIA
+# Verificar si los intervalos incluyen 0
+incluye_cero_t <- (ci_t_low <= 0 & ci_t_high >= 0)
+incluye_cero_boot <- (boot_diff_ci[1] <= 0 & boot_diff_ci[2] >= 0)
+
+evaluacion <- data.frame(
+  Metodo = c("Prueba t", "Bootstrap"),
+  Lim_inf_CI = c(ci_t_low, boot_diff_ci[1]),
+  Lim_sup_CI = c(ci_t_high, boot_diff_ci[2]),
+  Incluye_0 = c(incluye_cero_t, incluye_cero_boot),
+  p_valor = c(p_valor_t, p_boot)
+)
+
+cat("\nEvaluación de la evidencia:\n")
+print(evaluacion)
+
+# 10. VISUALIZACIÓN DEL BOOTSTRAP
 hist_df <- data.frame(boot_diff = boot_diff)
+
 ggplot(hist_df, aes(x = boot_diff)) +
-  geom_histogram(bins = 60) +
+  geom_histogram(bins = 60, fill = "gray80", color = "white") +
   geom_vline(xintercept = obs_diff, color = "red", linetype = "dashed") +
   geom_vline(xintercept = boot_diff_ci, color = "blue") +
-  labs(title = "Distribución con bootstrap (grupo1 - grupo0)",
-       subtitle = paste0("obs diff = ", round(obs_diff, 3),
-                         "; 95% CI (boot) = [", round(boot_diff_ci[1],3), ", ", round(boot_diff_ci[2],3), "]"),
-       x = "Diferencia en media CO2", y = "Frequencia")
+  labs(title = "Distribución bootstrap de la diferencia (PIB alto - PIB bajo)",
+       subtitle = paste0("Diferencia observada = ", round(obs_diff, 3),
+                         "; 95% CI Boot = [", round(boot_diff_ci[1],3), ", ", round(boot_diff_ci[2],3), "]"),
+       x = "Diferencia en medias de CO₂ per cápita", y = "Frecuencia") +
+  theme_minimal()
 
-### 7. RESULTADOS RESUMIDOS
+# 11. RESUMEN FINAL
 cat("\nResumen final:\n")
 cat(sprintf("Grupo 0: n=%d, media=%.4f, CI_boot=[%.4f, %.4f]\n",
             n0, mean(x0), boot_stats$CI_lo[boot_stats$grupo==0], boot_stats$CI_hi[boot_stats$grupo==0]))
 cat(sprintf("Grupo 1: n=%d, media=%.4f, CI_boot=[%.4f, %.4f]\n",
             n1, mean(x1), boot_stats$CI_lo[boot_stats$grupo==1], boot_stats$CI_hi[boot_stats$grupo==1]))
 cat(sprintf("Diferencia observada (grupo1 - grupo0) = %.4f\n", obs_diff))
-cat(sprintf("Bootstrap SE de la diferencia = %.4f\n", boot_diff_se))
-cat(sprintf("Bootstrap 95%% CI para la diferencia = [%.4f, %.4f]\n", boot_diff_ci[1], boot_diff_ci[2]))
-cat(sprintf("p-valor bootstrap (dos colas) aproximado = %.4f\n", p_boot))
+cat(sprintf("IC (t) = [%.4f, %.4f]\n", ci_t_low, ci_t_high))
+cat(sprintf("IC (Bootstrap) = [%.4f, %.4f]\n", boot_diff_ci[1], boot_diff_ci[2]))
+cat(sprintf("p-valor (t) = %.4f\n", p_valor_t))
+cat(sprintf("p-valor (Bootstrap) = %.4f\n", p_boot))
+
 ```
+
 
 
 # PARTE 3: Interpretación y reflexión sobre la decisión estadística
