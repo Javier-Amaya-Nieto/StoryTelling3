@@ -39,11 +39,10 @@ pacman::p_load(
   haven,        # Lectura y escritura de formatos de Stata, SAS y SPSS.
   readxl,       # Lectura de archivos de Excel (.xls y .xlsx).
   stargazer,    # Creación de tablas de regresión con formato de publicación.
-  knitr         # Generación de reportes dinámicos.
+  knitr,        # Generación de reportes dinámicos.
+  ggrepel,
+  ggpar,
 )
-
-# Cargar archivo Excel (Leer la PRIMERA hoja del Excel)
-data0 <- read_excel("data/World_bank_indicadors.xlsx", sheet = 1)
 ```
 
 # Objetivo
@@ -73,70 +72,35 @@ Especifique cuál sería la consecuencia de cometer un error tipo I (falso posit
 ```{r}
 ### 1. LIMPIEZA DE DATOS
 
-# Convertir a data frame
-data0 <- as.data.frame(data0)
+# Importar datos de PIB y CO2 ------------------------------------
+pib_file <- file.path(path, "PIB.xls")
+co2_file <- file.path(path, "CO2.xls")
 
-# Renombrar columnas a nombres válidos
-colnames(data0) <- make.names(colnames(data0))
+data_pib <- read_excel(pib_file, sheet = "Data", skip = 3) %>% clean_names()
+data_co2 <- read_excel(co2_file, sheet = "Data", skip = 3) %>% clean_names()
 
-# Reemplazar ".." por NA y convertir a numérico
-data0 <- data0 %>%
-  mutate(valor_2023 = na_if(X2023..YR2023., ".."),
-         valor_2023 = as.numeric(gsub(",", ".", valor_2023)))
+# Seleccionar columnas de interés para 2023 ---------------------
+pib_2023 <- data_pib %>%
+  select(country_code, pib_2023 = x2023)
 
-# Agrupar, filtrar países sin NA, desagrupar
-data1 <- data0 %>%
-  group_by(Country.Name) %>%
-  filter(!any(is.na(valor_2023))) %>%
-  ungroup()
+co2_2023 <- data_co2 %>%
+  select(country_code, co2_2023 = x2023)
 
-### 2. ORGANIZAR LA BASE POR LAS VARIABLES DE CLASIFICAICÓN (X)
+# Integrar datasets por código de país -------------------------
+data_join <- left_join(pib_2023, co2_2023, by = "country_code") %>%
+  drop_na()
 
-# Dividemos la base de datos en 2 grupos tomando en cuenta la media del PIB per cápita 
+# Clasificación: Alto vs. Bajo PIB -----------------------------
+data_join <- data_join %>%
+  mutate(grupo_pib = if_else(
+    pib_2023 >= median(pib_2023, na.rm = TRUE),
+    "Alto PIB per cápita",
+    "Bajo PIB per cápita"
+  ))
 
-####Explique por qué usa ese criterio (hace falta)
-
-# 1. Calcular la media del PIB per cápita
-media_pib <- data1 %>%
-  filter(Series.Name == "GDP per capita (current US$)") %>%
-  summarise(media = mean(valor_2023, na.rm = TRUE)) %>%
-  pull(media)
-
-# 2. Crear tabla de clasificación por país (solo usando PIB)
-clasificacion <- data1 %>%
-  filter(Series.Name == "GDP per capita (current US$)") %>%
-  mutate(
-    grupo_pib = if_else(valor_2023 < media_pib, 0, 1)
-  ) %>%
-  select(Country.Name, grupo_pib)
-
-# 3. Unir esa clasificación a la base original
-data1 <- data1 %>%
-  left_join(clasificacion, by = "Country.Name")
-
-# 4. Verificar resultado
-data1 %>%
-  arrange(Country.Name, Series.Name) %>%
-  select(Country.Name, Series.Name, valor_2023, grupo_pib) %>%
-  head(10)
-
-# Nos quedamos solo con las variables de interés
-data2 <- data1 %>%
-  select(Country.Name, Series.Name, valor_2023, grupo_pib)
-
-### 3. FILTRAR VARIABLES DE INTERES 
-
-# Filtrar solo observaciones de CO2
-data_co2 <- data2 %>%
-  filter(grepl("CO2", Series.Name, ignore.case = TRUE)) %>%   # busca solo "CO2"
-  filter(!is.na(grupo_pib) & !is.na(valor_2023)) %>%
-  mutate(grupo_pib = as.integer(grupo_pib))
-
-# Revisar tamaños y medias por grupo
-data_co2 %>% group_by(grupo_pib) %>% 
-  summarise(n = n(), 
-            mean = mean(valor_2023), 
-            sd = sd(valor_2023))
+# Separando los DF --------------------------------------------
+d1 <- data_join %>% filter(grupo_pib=="Alto PIB per cápita")
+d2 <- data_join %>% filter(grupo_pib=="Bajo PIB per cápita")
 ```
 
 # Parte 2: Evidencia empírica y estimación
@@ -146,55 +110,106 @@ data_co2 %>% group_by(grupo_pib) %>%
 Número de países, año de referencia, valores mínimos y máximos de PIB y CO₂ per cápita. Esto es el análisis univariado que permite conocer las particularidades de los datos con los que va a trabajar. 2. Estadísticas descriptivas de cada grupo.
 
 ```{r}
-### 4. ANALISIS UNIVARIADO Y ESTADÍSTICAS
+### 2. ANALISIS UNIVARIADO Y ESTADÍSTICAS
 
-# Número total de países en la base
-num_paises <- length(unique(data2$Country.Name))
-cat("Número total de países en la base:", num_paises, "\n")
-
-# Año de referencia (ya definido en la columna 'valor_2023')
-cat("Año de referencia de los datos: 2023\n")
-
-# Valores mínimos y máximos del PIB per cápita (US$ corrientes)
-pib_summary <- data2 %>%
-  filter(Series.Name == "GDP per capita (current US$)") %>%
+# Resumen descriptivo- Tabla     ----------------------------------
+analisis_univariado <- data_join %>%
   summarise(
-    min_pib = min(valor_2023, na.rm = TRUE),
-    max_pib = max(valor_2023, na.rm = TRUE),
-    mean_pib = mean(valor_2023, na.rm = TRUE),
-    sd_pib = sd(valor_2023, na.rm = TRUE)
+    n_paises = n_distinct(country_code),
+    anio_referencia = 2023,
+    min_pib = min(pib_2023, na.rm = TRUE),
+    max_pib = max(pib_2023, na.rm = TRUE),
+    min_co2 = min(co2_2023, na.rm = TRUE),
+    max_co2 = max(co2_2023, na.rm = TRUE)
   )
 
-print(pib_summary)
+print(analisis_univariado)
 
-# Valores mínimos y máximos de emisiones de CO₂ per cápita
-co2_summary <- data2 %>%
-  filter(grepl("CO2", Series.Name, ignore.case = TRUE)) %>%
-  summarise(
-    min_co2 = min(valor_2023, na.rm = TRUE),
-    max_co2 = max(valor_2023, na.rm = TRUE),
-    mean_co2 = mean(valor_2023, na.rm = TRUE),
-    sd_co2 = sd(valor_2023, na.rm = TRUE)
-  )
-
-print(co2_summary)
-
-# Estadísticas descriptivas de CO₂ por grupo de ingreso
-stats_grupo <- data_co2 %>%
+# Estadísticas descriptivas por grupo de PIB- Tabla  --------------
+resumen <- data_join %>%
   group_by(grupo_pib) %>%
   summarise(
-    n_paises = n_distinct(Country.Name),
-    media_CO2 = mean(valor_2023, na.rm = TRUE),
-    mediana_CO2 = median(valor_2023, na.rm = TRUE),
-    sd_CO2 = sd(valor_2023, na.rm = TRUE),
-    min_CO2 = min(valor_2023, na.rm = TRUE),
-    max_CO2 = max(valor_2023, na.rm = TRUE)
-  ) %>%
-  mutate(
-    grupo = ifelse(grupo_pib == 0, "PIB bajo", "PIB alto")
-  ) %>%
-  select(grupo, everything(), -grupo_pib)
-print(stats_grupo)
+    n_paises = n_distinct(country_code),
+    promedio_pib = mean(pib_2023, na.rm = TRUE),
+    sd_pib = sd(pib_2023, na.rm = TRUE),
+    min_pib = min(pib_2023, na.rm = TRUE),
+    max_pib = max(pib_2023, na.rm = TRUE),
+    promedio_co2 = mean(co2_2023, na.rm = TRUE),
+    sd_co2 = sd(co2_2023, na.rm = TRUE),
+    min_co2 = min(co2_2023, na.rm = TRUE),
+    max_co2 = max(co2_2023, na.rm = TRUE)
+  )
+
+print(resumen)
+
+# Gráficos 
+
+# Gráfico 1: Correlación PIB y CO2
+g1 <- ggplot(data_join, aes(x = pib_2023, y = co2_2023, color = grupo_pib)) +
+  geom_point(alpha = 0.8, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, color = "#003366", linetype = "dashed") +
+  scale_x_log10(labels = scales::comma) +
+  scale_y_log10(labels = scales::comma) +
+  scale_color_manual(values = c("#003366", "#336699", "#6699CC", "#99CCFF")) +
+  labs(
+    title = "Relación entre PIB per cápita y emisiones de CO2 per cápita",
+    subtitle = "Correlación",
+    x = "PIB per cápita (USD, log)",
+    y = "CO2 per cápita (toneladas, log)",
+    color = "Grupo de PIB"
+  ) +
+  theme_minimal(base_size = 13, base_family = "Helvetica") +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(face = "bold", color = "#003366"),
+        axis.title = element_text(face = "bold", color = "#003366"),
+        legend.position = "bottom")
+
+ggsave("Graficos/g1.png", g1, width = 8, height = 6, dpi = 300)
+
+# Gráfico 2: Top 10 países con mayor CO2 per cápita
+top_co2 <- data_join %>%
+  arrange(desc(co2_2023)) %>%
+  slice_head(n = 10)
+
+g2 <- ggplot(top_co2, aes(x = reorder(country_code, co2_2023), y = co2_2023)) +
+  geom_col(fill = "#003366") +
+  coord_flip() +
+  labs(
+    title = "Top 10 países con mayores emisiones de CO2 per cápita",
+    x = "País",
+    y = "CO2 per cápita (toneladas)"
+  ) +
+  theme_minimal(base_size = 13, base_family = "Helvetica") +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(face = "bold", color = "#003366"),
+        axis.title = element_text(face = "bold", color = "#003366"))
+
+ggsave("Graficos/g2.png", g2, width = 8, height = 6, dpi = 300)
+
+# ============================================================
+# Gráfico 3: Correlación en los países con mayor PIB o CO2
+# ============================================================
+top_paises <- data_join %>%
+  arrange(desc(pib_2023)) %>% slice_head(n = 10) %>%
+  bind_rows(data_join %>% arrange(desc(co2_2023)) %>% slice_head(n = 10)) %>%
+  distinct(country_code, .keep_all = TRUE)
+
+g3 <- ggplot(top_paises, aes(x = pib_2023, y = co2_2023, label = country_code)) +
+  geom_point(size = 3, alpha = 0.8, color = "#003366") +
+  geom_smooth(method = "lm", se = FALSE, color = "gray40", linetype = "dashed") +
+  ggrepel::geom_text_repel(size = 3, color = "black") +
+  labs(
+    title = "Relación entre PIB per cápita y CO2 per cápita",
+    subtitle = "Países con mayores valores de PIB y emisiones de CO2 per cápita",
+    x = "PIB per cápita (2023)",
+    y = "CO2 per cápita (2023)"
+  ) +
+  theme_minimal(base_size = 13, base_family = "Helvetica") +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(face = "bold", color = "#003366"),
+        axis.title = element_text(face = "bold", color = "#003366"))
+
+ggsave("Graficos/g3.png", g3, width = 8, height = 6, dpi = 300)
 
 ```
 
@@ -203,158 +218,140 @@ print(stats_grupo)
 Interprete el sentido y magnitud de la diferencia (¿cuánto más emiten los países de PIB alto?).Estime un intervalo de confianza del 95 % para esa diferencia usando un procedimiento Bootstrap y una prueba t. ¿Qué diferencia hay entre los resultados de Bootstrap y la prueba t?
 
 ```{r}
-### 5. DIFERENCIA PROMEDIO 
+### 3. DIFERENCIA PROMEDIO 
 
-set.seed(1234)   # reproducibilidad
+# Paso 0. Diferencia promedio 
+dif_media <- mean(d1$co2_2023, na.rm = TRUE) - mean(d2$co2_2023, na.rm = TRUE)
 
-# Separar los grupos
-x0 <- data_co2 %>% filter(grupo_pib == 0) %>% pull(valor_2023)   # PIB bajo
-x1 <- data_co2 %>% filter(grupo_pib == 1) %>% pull(valor_2023)   # PIB alto
+cat("Diferencia promedio de emisiones (PIB alto - PIB bajo):",
+    round(dif_media, 3), "\n")
 
-# Calcular diferencia promedio (PIB alto - PIB bajo)
-obs_diff <- mean(x1, na.rm = TRUE) - mean(x0, na.rm = TRUE)
-
-cat("DIFERENCIA PROMEDIO DE EMISIONES ENTRE GRUPOS\n")
-cat("------------------------------------------------------------\n")
-cat("Promedio PIB bajo :", round(mean(x0, na.rm = TRUE), 3), "ton CO₂ per cápita\n")
-cat("Promedio PIB alto :", round(mean(x1, na.rm = TRUE), 3), "ton CO₂ per cápita\n")
-cat("Diferencia observada (PIB alto - PIB bajo):", round(obs_diff, 3), "\n")
-```
-
-```{r}
-# PARTE 6 — DIFERENCIA DE EMISIONES ENTRE GRUPOS DE PIB
-set.seed(1234)   # Reproducibilidad
-
-# 1. ESTADÍSTICAS POR GRUPO Y PRUEBA T
-# Calcular estadísticas básicas por grupo
-res_param <- data_co2 %>%
-  group_by(grupo_pib) %>%
-  summarise(
-    n = n(),
-    media = mean(valor_2023, na.rm = TRUE),
-    sd = sd(valor_2023, na.rm = TRUE),
-    se_param = sd / sqrt(n),
-    tcrit = qt(0.975, df = n - 1),
-    CI_low_param = media - tcrit * se_param,
-    CI_high_param = media + tcrit * se_param
-  )
-
-cat("Resumen de estadísticas por grupo:\n")
-print(res_param)
-
-# Prueba t de diferencia de medias (PIB alto vs PIB bajo)
-t_test <- t.test(valor_2023 ~ grupo_pib, data = data_co2, var.equal = FALSE)
-
-cat("\nPrueba t de diferencia de medias:\n")
-print(t_test)
-
-# Extraer valores clave de la prueba t
-ci_t_low  <- t_test$conf.int[1]
-ci_t_high <- t_test$conf.int[2]
-p_valor_t <- t_test$p.value
-
-
-# 7. ESTIMACIÓN CON BOOTSTRAP
-B <- 1000  # Número de replicaciones bootstrap
-boot_stats <- data.frame(grupo = integer(),
-                         boot_se = numeric(),
-                         CI_lo = numeric(),
-                         CI_hi = numeric())
-
-# Estimación bootstrap por grupo
-for (g in sort(unique(data_co2$grupo_pib))) {
-  x <- data_co2 %>% filter(grupo_pib == g) %>% pull(valor_2023)
-  n <- length(x)
-  boot_means <- replicate(B, mean(sample(x, size = n, replace = TRUE)))
-  boot_se <- sd(boot_means)
-  ci <- quantile(boot_means, c(0.025, 0.975))
-  boot_stats <- rbind(boot_stats,
-                      data.frame(grupo = g, boot_se = boot_se, CI_lo = ci[1], CI_hi = ci[2]))
+# Paso 1. Función de media para bootstrap (por grupo)
+boot_mean <- function(data, indices) {
+  d <- data[indices, ]              
+  mean(d$co2_2023, na.rm = TRUE)
 }
 
-cat("\nIntervalos bootstrap por grupo:\n")
-print(boot_stats)
+# Paso 2. Función que devuelve media e IC95% (BCa y Percentil)
+summarize_boot_both <- function(df, etiqueta, R = 10000, seed = 123){
+  set.seed(seed)
+  b  <- boot::boot(df, statistic = boot_mean, R = R)
+  ci <- boot::boot.ci(b, type = c("bca", "perc"))
+  
+  tibble::tibble(
+    grupo_pib      = etiqueta,
+    n_paises       = nrow(df),
+    mean_co2       = mean(df$co2_2023, na.rm = TRUE),
+    boot_R         = R,
+    ic95_low_bca   = ifelse(!is.null(ci$bca), ci$bca[4], NA_real_),
+    ic95_high_bca  = ifelse(!is.null(ci$bca), ci$bca[5], NA_real_),
+    ic95_low_perc  = ifelse(!is.null(ci$percent), ci$percent[4], NA_real_),
+    ic95_high_perc = ifelse(!is.null(ci$percent), ci$percent[5], NA_real_)
+  )
+}
 
-# 8. BOOTSTRAP PARA LA DIFERENCIA DE MEDIAS
-# Definir los grupos
-x0 <- data_co2 %>% filter(grupo_pib == 0) %>% pull(valor_2023)
-x1 <- data_co2 %>% filter(grupo_pib == 1) %>% pull(valor_2023)
-n0 <- length(x0); n1 <- length(x1)
+# Paso 3. Aplicar a cada grupo (Alto / Bajo PIB)
+tabla_ic_wide <- dplyr::bind_rows(
+  summarize_boot_both(d1, "Alto PIB per cápita"),
+  summarize_boot_both(d2, "Bajo PIB per cápita")
+) %>%
+  dplyr::mutate(across(where(is.numeric), ~ round(.x, 3)))
 
-# Diferencia observada
-obs_diff <- mean(x1) - mean(x0)
+print(tabla_ic_wide)
 
-# Bootstrap de la diferencia
-boot_diff <- replicate(B, {
-  m0 <- mean(sample(x0, size = n0, replace = TRUE))
-  m1 <- mean(sample(x1, size = n1, replace = TRUE))
-  m1 - m0
-})
+# Paso 4. Bootstrap de la DIFERENCIA de medias
+boot_diff <- function(data, indices) {
+  d <- data[indices, ]
+  mean(d$co2_2023[d$grupo_pib == "Alto PIB per cápita"], na.rm = TRUE) -
+    mean(d$co2_2023[d$grupo_pib == "Bajo PIB per cápita"], na.rm = TRUE)
+}
 
-# Estadísticos bootstrap
-boot_diff_se <- sd(boot_diff)
-boot_diff_ci <- quantile(boot_diff, c(0.025, 0.975))
-p_boot <- mean(abs(boot_diff) >= abs(obs_diff))
+set.seed(123)
+boot_diff_res <- boot::boot(data_join, statistic = boot_diff, R = 10000)
+ci_diff <- boot::boot.ci(boot_diff_res, type = c("bca", "perc"))
 
-# Resultados resumidos de la diferencia
-diff_results <- data.frame(
-  estadistico = c("obs_diff","boot_se","boot_CI_lo","boot_CI_hi","p_boot_two_sided"),
-  valor = c(obs_diff, boot_diff_se, boot_diff_ci[1], boot_diff_ci[2], p_boot)
-)
+cat("\n=== Bootstrap diferencia de medias (Alto - Bajo PIB) ===\n")
+cat("Diferencia promedio:", round(mean(boot_diff_res$t), 3), "\n")
+cat("IC95% Percentil:", round(ci_diff$percent[4], 3), "a", round(ci_diff$percent[5], 3), "\n")
+cat("IC95% BCa:", round(ci_diff$bca[4], 3), "a", round(ci_diff$bca[5], 3), "\n\n")
 
-cat("\nResultados bootstrap para la diferencia de medias:\n")
-print(diff_results)
+# Paso 5. Prueba t clásica para comparación
+t_test_res <- t.test(co2_2023 ~ grupo_pib, data = data_join, var.equal = FALSE)
 
-# 9. EVALUACIÓN DE LA EVIDENCIA
-# Verificar si los intervalos incluyen 0
-incluye_cero_t <- (ci_t_low <= 0 & ci_t_high >= 0)
-incluye_cero_boot <- (boot_diff_ci[1] <= 0 & boot_diff_ci[2] >= 0)
+cat("=== Prueba t clásica ===\n")
+cat("Media PIB alto:", round(t_test_res$estimate[1], 3), "\n")
+cat("Media PIB bajo:", round(t_test_res$estimate[2], 3), "\n")
+cat("Diferencia de medias:", round(t_test_res$estimate[1] - t_test_res$estimate[2], 3), "\n")
+cat("IC95%:", round(t_test_res$conf.int[1], 3), "a", round(t_test_res$conf.int[2], 3), "\n")
+cat("p-valor:", round(t_test_res$p.value, 4), "\n")
 
-evaluacion <- data.frame(
-  Metodo = c("Prueba t", "Bootstrap"),
-  Lim_inf_CI = c(ci_t_low, boot_diff_ci[1]),
-  Lim_sup_CI = c(ci_t_high, boot_diff_ci[2]),
-  Incluye_0 = c(incluye_cero_t, incluye_cero_boot),
-  p_valor = c(p_valor_t, p_boot)
-)
+# Gráfico de distribución bootstrap
+g4 <- ggplot(data = tibble(diff = boot_diff_res$t), aes(x = diff)) +
+  geom_histogram(aes(y = ..density..), bins = 50, fill = "#5B8FA8", alpha = 0.6, color = "white") +
+  geom_density(color = "#003366", size = 1.2) +
+  geom_vline(xintercept = mean(boot_diff_res$t), color = "#003366", size = 1.3) +
+  geom_vline(xintercept = c(ci_diff$percent[4], ci_diff$percent[5]), color = "#1B4F72", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = c(ci_diff$bca[4], ci_diff$bca[5]), color = "#2874A6", linetype = "dotted", size = 1) +
+  labs(
+    title = "Distribución de la diferencia de emisiones(PIB alto - PIB bajo)",
+    x = "Diferencia de medias de CO2 per cápita",
+    y = "Densidad"
+  ) +
+  theme_minimal(base_size = 13, base_family = "Helvetica") +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", color = "#003366", size = 14),
+    plot.subtitle = element_text(color = "#1B4F72", size = 11),
+    axis.title = element_text(face = "bold", color = "#003366"),
+    axis.text = element_text(color = "gray20")
+  )
 
-cat("\nEvaluación de la evidencia:\n")
-print(evaluacion)
-
-# 10. VISUALIZACIÓN DEL BOOTSTRAP
-hist_df <- data.frame(boot_diff = boot_diff)
-
-ggplot(hist_df, aes(x = boot_diff)) +
-  geom_histogram(bins = 60, fill = "gray80", color = "white") +
-  geom_vline(xintercept = obs_diff, color = "red", linetype = "dashed") +
-  geom_vline(xintercept = boot_diff_ci, color = "blue") +
-  labs(title = "Distribución bootstrap de la diferencia (PIB alto - PIB bajo)",
-       subtitle = paste0("Diferencia observada = ", round(obs_diff, 3),
-                         "; 95% CI Boot = [", round(boot_diff_ci[1],3), ", ", round(boot_diff_ci[2],3), "]"),
-       x = "Diferencia en medias de CO₂ per cápita", y = "Frecuencia") +
-  theme_minimal()
-
-# 11. RESUMEN FINAL
-cat("\nResumen final:\n")
-cat(sprintf("Grupo 0: n=%d, media=%.4f, CI_boot=[%.4f, %.4f]\n",
-            n0, mean(x0), boot_stats$CI_lo[boot_stats$grupo==0], boot_stats$CI_hi[boot_stats$grupo==0]))
-cat(sprintf("Grupo 1: n=%d, media=%.4f, CI_boot=[%.4f, %.4f]\n",
-            n1, mean(x1), boot_stats$CI_lo[boot_stats$grupo==1], boot_stats$CI_hi[boot_stats$grupo==1]))
-cat(sprintf("Diferencia observada (grupo1 - grupo0) = %.4f\n", obs_diff))
-cat(sprintf("IC (t) = [%.4f, %.4f]\n", ci_t_low, ci_t_high))
-cat(sprintf("IC (Bootstrap) = [%.4f, %.4f]\n", boot_diff_ci[1], boot_diff_ci[2]))
-cat(sprintf("p-valor (t) = %.4f\n", p_valor_t))
-cat(sprintf("p-valor (Bootstrap) = %.4f\n", p_boot))
+ggsave("Graficos/g4.png", g4, width = 8, height = 6, dpi = 300)
 
 ```
+El gráfico evidencia una relación positiva clara entre el nivel de ingreso y las emisiones per cápita.
+Los países con PIB alto emiten, en promedio, unas 6 toneladas más de CO₂ por persona que los países con PIB bajo, con alta confianza estadística (95%).
 
 #### Evaluación de la evidencia
 
 -   Determine si el intervalo de confianza incluye o no el valor 0.
+```{r}
+# Verificar si el intervalo bootstrap incluye el 0
+ic_low <- ci_diff$bca[4]
+ic_high <- ci_diff$bca[5]
+
+incluye_cero <- (ic_low <= 0 & ic_high >= 0)
+
+cat("¿El IC95% bootstrap incluye el valor 0?:", incluye_cero, "\n")
+cat("IC95% BCa =", round(ic_low, 3), "a", round(ic_high, 3), "\n\n")
+```
 
 -   Reporte el p-valor de la prueba de hipótesis y explique qué significa en términos del riesgo de error tipo I.
+```{r}
+#  Obtener p-valor de la prueba t
+p_valor <- t_test_res$p.value
+
+cat("p-valor de la prueba t:", format(p_valor, scientific = TRUE, digits = 5), "\n")
+
+if (p_valor < 0.05) {
+  cat("→ Se rechaza H0 al 5% de significancia. Evidencia de diferencia significativa.\n")
+} else {
+  cat("→ No se rechaza H0 al 5%. No hay evidencia de diferencia significativa.\n")
+}
+
+```
 
 -   Verifique si el resultado de la prueba y el intervalo conducen a la misma conclusión.
+
+```{r}
+if (!incluye_cero & p_valor < 0.05) {
+  cat("\n✅ Ambos métodos (Bootstrap y prueba t) llevan a la misma conclusión: \n")
+  cat("   los países de PIB alto emiten significativamente más CO₂ per cápita.\n")
+} else {
+  cat("\n⚠️ Los resultados no son completamente consistentes entre métodos.\n")
+}
+```
+
 
 # Parte 3: Interpretación y reflexión sobre la decisión estadística
 
