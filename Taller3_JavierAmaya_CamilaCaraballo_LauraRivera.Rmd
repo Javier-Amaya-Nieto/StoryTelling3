@@ -42,11 +42,8 @@ pacman::p_load(
   knitr         # Generación de reportes dinámicos.
 )
 
-# Cambiar directorio de trabajo
-setwd("C:/1. MECA/2025/EXPLORACIÓN Y VISUALIZACIÓN DE DATOS- Miguel Andres Garzón/StoryTelling3/Datos")
-
 # Cargar archivo Excel (Leer la PRIMERA hoja del Excel)
-data0 <- read_excel("World_bank_indicadors.xlsx", sheet = 1)
+data0 <- read_excel("data/World_bank_indicadors.xlsx", sheet = 1)
 ```
 
 # Objetivo
