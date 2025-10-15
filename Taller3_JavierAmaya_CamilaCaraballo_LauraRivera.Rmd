@@ -49,15 +49,29 @@ setwd("C:/1. MECA/2025/EXPLORACIÓN Y VISUALIZACIÓN DE DATOS- Miguel Andres Gar
 data0 <- read_excel("World_bank_indicadors.xlsx", sheet = 1)
 ```
 
-# PARTE 0: Situación
+# Objetivo
 
-Usando datos del Banco Mundial (World Development Indicators) debemos comparar las emisiones de CO₂ per cápita entre países con PIB per cápita alto y bajo, estimar la diferencia promedio, su error estándar y un intervalo de confianza del 95 %, para posteriormente evaluar si la diferencia observada es estadísticamente significativa mediante una prueba de hipótesis bilateral o unilateral, según la justificación teórica.
+Usando datos del Banco Mundial (World Development Indicators) se deben comparar las emisiones de CO₂ per cápita entre países con PIB per cápita alto y bajo, estimar la diferencia promedio, su error estándar y un intervalo de confianza del 95 %, para posteriormente evaluar si la diferencia observada es estadísticamente significativa mediante una prueba de hipótesis bilateral o unilateral, según la justificación teórica.
 
-# PARTE 1: Planteamiento conceptual y formulación de hipótesis
+# Parte 1: Planteamiento conceptual y formulación de hipótesis
 
-## Punto 1 al 3 Ver documento (redactar esto)
+#### Contextualización 
 
-## Punto 4. Definir los indicadores
+Explique brevemente por qué es plausible pensar que el nivel de ingreso de los países podría asociarse con sus emisiones per cápita.
+
+• ¿Qué teorías o intuiciones respaldan esta relación?
+
+• ¿Qué razones podrían llevar a que no exista una diferencia real?
+
+#### Formulación 
+
+Formule el contraste de hipótesis: Defina la hipótesis nula (H₀) y la alternativa (H₁). Justifique si el contraste debe ser bilateral (interesa cualquier diferencia) o unilateral (interesa una dirección específica: mayor contaminación en países ricos)
+
+#### Especificación
+
+Especifique cuál sería la consecuencia de cometer un error tipo I (falso positivo) o un error t ipo II (falso negativo), en este contexto.
+
+#### Definición de indicadores
 
 ```{r}
 ### 1. LIMPIEZA DE DATOS
@@ -128,9 +142,12 @@ data_co2 %>% group_by(grupo_pib) %>%
             sd = sd(valor_2023))
 ```
 
-# PARTE 2: Evidencia empírica y estimación
+# Parte 2: Evidencia empírica y estimación
 
-### Punto 1. Describa brevemente los datos
+#### Descripción breve de los datos
+
+Número de países, año de referencia, valores mínimos y máximos de PIB y CO₂ per cápita. Esto es el análisis univariado que permite conocer las particularidades de los datos con los que va a trabajar. 2. Estadísticas descriptivas de cada grupo.
+
 ```{r}
 ### 4. ANALISIS UNIVARIADO Y ESTADÍSTICAS
 
@@ -183,7 +200,10 @@ stats_grupo <- data_co2 %>%
 print(stats_grupo)
 
 ```
-### Punto 2. Estime la diferencia promedio de emisiones entre los grupos 
+
+#### Estimación de la diferencia promedio de emisiones entre los grupos
+
+Interprete el sentido y magnitud de la diferencia (¿cuánto más emiten los países de PIB alto?).Estime un intervalo de confianza del 95 % para esa diferencia usando un procedimiento Bootstrap y una prueba t. ¿Qué diferencia hay entre los resultados de Bootstrap y la prueba t?
 
 ```{r}
 ### 5. DIFERENCIA PROMEDIO 
@@ -203,6 +223,7 @@ cat("Promedio PIB bajo :", round(mean(x0, na.rm = TRUE), 3), "ton CO₂ per cáp
 cat("Promedio PIB alto :", round(mean(x1, na.rm = TRUE), 3), "ton CO₂ per cápita\n")
 cat("Diferencia observada (PIB alto - PIB bajo):", round(obs_diff, 3), "\n")
 ```
+
 ```{r}
 # PARTE 6 — DIFERENCIA DE EMISIONES ENTRE GRUPOS DE PIB
 set.seed(1234)   # Reproducibilidad
@@ -330,7 +351,28 @@ cat(sprintf("p-valor (Bootstrap) = %.4f\n", p_boot))
 
 ```
 
+#### Evaluación de la evidencia 
 
+-   Determine si el intervalo de confianza incluye o no el valor 0.
 
-# PARTE 3: Interpretación y reflexión sobre la decisión estadística
-Ver documento (redactar esto)
+-   Reporte el p-valor de la prueba de hipótesis y explique qué significa en términos del riesgo de error tipo I.
+
+-   Verifique si el resultado de la prueba y el intervalo conducen a la misma conclusión.
+
+# Parte 3: Interpretación y reflexión sobre la decisión estadística
+
+#### Análisis
+
+Si el resultado fue significativo, ¿qué implicaría en términos de política ambiental o desarrollo sostenible? Si no fue significativo, ¿significa que no existe relación o que la evidencia no es suficiente?
+
+#### Reflexión
+
+Describa qué sería un falso positivo y un falso negativo en este estudio, y cuáles consecuencias tendría cada uno.
+
+¿Qué factores metodológicos (tamaño de muestra, variabilidad, agrupación) influyen en la probabilidad de cometer estos errores?
+
+#### Conclusión sobre la robustez 
+
+¿Cómo podría mejorarse el análisis (más datos, otras variables, nuevos años, ponderaciones)?
+
+¿Qué limitaciones debemos reconocer al generalizar estos resultados?
