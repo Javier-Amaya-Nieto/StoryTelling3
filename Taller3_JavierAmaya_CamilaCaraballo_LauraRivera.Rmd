@@ -55,7 +55,7 @@ Usando datos del Banco Mundial (World Development Indicators) se deben comparar 
 
 # Parte 1: Planteamiento conceptual y formulación de hipótesis
 
-#### Contextualización 
+#### Contextualización
 
 Explique brevemente por qué es plausible pensar que el nivel de ingreso de los países podría asociarse con sus emisiones per cápita.
 
@@ -63,7 +63,7 @@ Explique brevemente por qué es plausible pensar que el nivel de ingreso de los 
 
 • ¿Qué razones podrían llevar a que no exista una diferencia real?
 
-#### Formulación 
+#### Formulación
 
 Formule el contraste de hipótesis: Defina la hipótesis nula (H₀) y la alternativa (H₁). Justifique si el contraste debe ser bilateral (interesa cualquier diferencia) o unilateral (interesa una dirección específica: mayor contaminación en países ricos)
 
@@ -351,7 +351,7 @@ cat(sprintf("p-valor (Bootstrap) = %.4f\n", p_boot))
 
 ```
 
-#### Evaluación de la evidencia 
+#### Evaluación de la evidencia
 
 -   Determine si el intervalo de confianza incluye o no el valor 0.
 
@@ -371,7 +371,7 @@ Describa qué sería un falso positivo y un falso negativo en este estudio, y cu
 
 ¿Qué factores metodológicos (tamaño de muestra, variabilidad, agrupación) influyen en la probabilidad de cometer estos errores?
 
-#### Conclusión sobre la robustez 
+#### Conclusión sobre la robustez
 
 ¿Cómo podría mejorarse el análisis (más datos, otras variables, nuevos años, ponderaciones)?
 
