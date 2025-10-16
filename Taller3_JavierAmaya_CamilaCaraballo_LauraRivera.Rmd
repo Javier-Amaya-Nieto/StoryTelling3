@@ -309,12 +309,13 @@ g4 <- ggplot(data = tibble(diff = boot_diff_res$t), aes(x = diff)) +
 ggsave("Graficos/g4.png", g4, width = 8, height = 6, dpi = 300)
 
 ```
-El gráfico evidencia una relación positiva clara entre el nivel de ingreso y las emisiones per cápita.
-Los países con PIB alto emiten, en promedio, unas 6 toneladas más de CO₂ por persona que los países con PIB bajo, con alta confianza estadística (95%).
+
+El gráfico evidencia una relación positiva clara entre el nivel de ingreso y las emisiones per cápita. Los países con PIB alto emiten, en promedio, unas 6 toneladas más de CO₂ por persona que los países con PIB bajo, con alta confianza estadística (95%).
 
 #### Evaluación de la evidencia
 
 -   Determine si el intervalo de confianza incluye o no el valor 0.
+
 ```{r}
 # Verificar si el intervalo bootstrap incluye el 0
 ic_low <- ci_diff$bca[4]
@@ -327,6 +328,7 @@ cat("IC95% BCa =", round(ic_low, 3), "a", round(ic_high, 3), "\n\n")
 ```
 
 -   Reporte el p-valor de la prueba de hipótesis y explique qué significa en términos del riesgo de error tipo I.
+
 ```{r}
 #  Obtener p-valor de la prueba t
 p_valor <- t_test_res$p.value
@@ -351,7 +353,6 @@ if (!incluye_cero & p_valor < 0.05) {
   cat("\n⚠️ Los resultados no son completamente consistentes entre métodos.\n")
 }
 ```
-
 
 # Parte 3: Interpretación y reflexión sobre la decisión estadística
 
