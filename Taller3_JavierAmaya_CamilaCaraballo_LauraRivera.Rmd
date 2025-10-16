@@ -40,8 +40,8 @@ pacman::p_load(
   readxl,       # Lectura de archivos de Excel (.xls y .xlsx).
   stargazer,    # Creación de tablas de regresión con formato de publicación.
   knitr,        # Generación de reportes dinámicos.
-  ggrepel,
-  ggpar,
+  kableExtra,
+  webshot,
 )
 ```
 
@@ -71,6 +71,9 @@ Especifique cuál sería la consecuencia de cometer un error tipo I (falso posit
 
 ```{r}
 ### 1. LIMPIEZA DE DATOS
+
+# Definir carpeta de datos (ruta relativa) ------------------------
+path <- file.path(getwd(), "datos")
 
 # Importar datos de PIB y CO2 ------------------------------------
 pib_file <- file.path(path, "PIB.xls")
@@ -115,15 +118,27 @@ Número de países, año de referencia, valores mínimos y máximos de PIB y CO�
 # Resumen descriptivo- Tabla     ----------------------------------
 analisis_univariado <- data_join %>%
   summarise(
-    n_paises = n_distinct(country_code),
-    anio_referencia = 2023,
-    min_pib = min(pib_2023, na.rm = TRUE),
-    max_pib = max(pib_2023, na.rm = TRUE),
-    min_co2 = min(co2_2023, na.rm = TRUE),
-    max_co2 = max(co2_2023, na.rm = TRUE)
-  )
+    `Número de países` = n_distinct(country_code),
+    `Año de referencia` = 2023,
+    `PIB mínimo` = min(pib_2023, na.rm = TRUE),
+    `PIB máximo` = max(pib_2023, na.rm = TRUE),
+    `CO₂ mínimo` = min(co2_2023, na.rm = TRUE),
+    `CO₂ máximo` = max(co2_2023, na.rm = TRUE)
+  ) %>%
+  pivot_longer(everything(),
+               names_to = "Indicador",
+               values_to = "Valor")
 
-print(analisis_univariado)
+# Ver tabla
+analisis_univariado %>%
+  kbl(caption = "Tabla 1. Resumen descriptivo de PIB y CO₂ per cápita (2023)",
+      align = "lc",
+      booktabs = TRUE,
+      digits = 2) %>%
+  kable_classic(full_width = FALSE, html_font = "Times New Roman") %>%
+  save_kable("graficos/analisis_univariado.html")
+
+
 
 # Estadísticas descriptivas por grupo de PIB- Tabla  --------------
 resumen <- data_join %>%
@@ -141,6 +156,17 @@ resumen <- data_join %>%
   )
 
 print(resumen)
+
+# Ver tabla
+resumen %>%
+  kbl(
+    caption = "Tabla 2. Estadísticas descriptivas por grupo de PIB (2023)",
+    align = "lc",
+    booktabs = TRUE,
+    digits = 2
+  ) %>%
+  kable_classic(full_width = FALSE, html_font = "Times New Roman") %>%
+  save_kable("graficos/resumen_por_grupo.html")
 
 # Gráficos 
 
@@ -186,9 +212,7 @@ g2 <- ggplot(top_co2, aes(x = reorder(country_code, co2_2023), y = co2_2023)) +
 
 ggsave("Graficos/g2.png", g2, width = 8, height = 6, dpi = 300)
 
-# ============================================================
 # Gráfico 3: Correlación en los países con mayor PIB o CO2
-# ============================================================
 top_paises <- data_join %>%
   arrange(desc(pib_2023)) %>% slice_head(n = 10) %>%
   bind_rows(data_join %>% arrange(desc(co2_2023)) %>% slice_head(n = 10)) %>%
@@ -251,13 +275,25 @@ summarize_boot_both <- function(df, etiqueta, R = 10000, seed = 123){
 }
 
 # Paso 3. Aplicar a cada grupo (Alto / Bajo PIB)
-tabla_ic_wide <- dplyr::bind_rows(
+tabla_ic <- dplyr::bind_rows(
   summarize_boot_both(d1, "Alto PIB per cápita"),
   summarize_boot_both(d2, "Bajo PIB per cápita")
 ) %>%
   dplyr::mutate(across(where(is.numeric), ~ round(.x, 3)))
 
-print(tabla_ic_wide)
+print(tabla_ic)
+
+
+# Guardar tabla
+tabla_ic %>%
+  kbl(
+    caption = "Tabla 3. Estimación bootstrap de medias e intervalos de confianza por grupo de PIB (2023)",
+    align = "lc",
+    booktabs = TRUE,
+    digits = 3
+  ) %>%
+  kable_classic(full_width = FALSE, html_font = "Times New Roman") %>%
+  save_kable("graficos/tabla_ic.html")
 
 # Paso 4. Bootstrap de la DIFERENCIA de medias
 boot_diff <- function(data, indices) {
@@ -318,13 +354,12 @@ El gráfico evidencia una relación positiva clara entre el nivel de ingreso y l
 
 ```{r}
 # Verificar si el intervalo bootstrap incluye el 0
-ic_low <- ci_diff$bca[4]
-ic_high <- ci_diff$bca[5]
+ic_bajo <- ci_diff$bca[4]
+ic_alto <- ci_diff$bca[5]
 
-incluye_cero <- (ic_low <= 0 & ic_high >= 0)
+incluye_cero <- (ic_bajo <= 0 & ic_alto >= 0)
 
-cat("¿El IC95% bootstrap incluye el valor 0?:", incluye_cero, "\n")
-cat("IC95% BCa =", round(ic_low, 3), "a", round(ic_high, 3), "\n\n")
+cat("IC95% BCa =", round(ic_bajo, 3), "a", round(ic_alto, 3), "\n\n")
 ```
 
 -   Reporte el p-valor de la prueba de hipótesis y explique qué significa en términos del riesgo de error tipo I.
