@@ -51,49 +51,33 @@ Usando datos del Banco Mundial (World Development Indicators) se deben comparar 
 
 # Parte 1: Planteamiento conceptual y formulación de hipótesis
 
-#### Contextualización
-
-Explique brevemente por qué es plausible pensar que el nivel de ingreso de los países podría asociarse con sus emisiones per cápita.
-
-• ¿Qué teorías o intuiciones respaldan esta relación?
-
-• ¿Qué razones podrían llevar a que no exista una diferencia real?
-
-#### Formulación
-
-Formule el contraste de hipótesis: Defina la hipótesis nula (H₀) y la alternativa (H₁). Justifique si el contraste debe ser bilateral (interesa cualquier diferencia) o unilateral (interesa una dirección específica: mayor contaminación en países ricos)
-
-#### Especificación
-
-Especifique cuál sería la consecuencia de cometer un error tipo I (falso positivo) o un error t ipo II (falso negativo), en este contexto.
-
 #### Definición de indicadores
 
 ```{r}
 ### 1. LIMPIEZA DE DATOS
 
-# Definir carpeta de datos (ruta relativa) ------------------------
+# Definir carpeta de datos (ruta relativa) 
 path <- file.path(getwd(), "datos")
 
-# Importar datos de PIB y CO2 ------------------------------------
+# Importar datos de PIB y CO2 
 pib_file <- file.path(path, "PIB.xls")
 co2_file <- file.path(path, "CO2.xls")
 
 data_pib <- read_excel(pib_file, sheet = "Data", skip = 3) %>% clean_names()
 data_co2 <- read_excel(co2_file, sheet = "Data", skip = 3) %>% clean_names()
 
-# Seleccionar columnas de interés para 2023 ---------------------
+# Seleccionar columnas de interés para 2023 
 pib_2023 <- data_pib %>%
   select(country_code, pib_2023 = x2023)
 
 co2_2023 <- data_co2 %>%
   select(country_code, co2_2023 = x2023)
 
-# Integrar datasets por código de país -------------------------
+# Integrar datasets por código de país 
 data_join <- left_join(pib_2023, co2_2023, by = "country_code") %>%
   drop_na()
 
-# Clasificación: Alto vs. Bajo PIB -----------------------------
+# Clasificación: Alto vs. Bajo PIB
 data_join <- data_join %>%
   mutate(grupo_pib = if_else(
     pib_2023 >= median(pib_2023, na.rm = TRUE),
@@ -101,7 +85,7 @@ data_join <- data_join %>%
     "Bajo PIB per cápita"
   ))
 
-# Separando los DF --------------------------------------------
+# Separando los DF
 d1 <- data_join %>% filter(grupo_pib=="Alto PIB per cápita")
 d2 <- data_join %>% filter(grupo_pib=="Bajo PIB per cápita")
 ```
