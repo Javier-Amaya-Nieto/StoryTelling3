@@ -33,7 +33,8 @@ pacman::p_load(
   AER,          # Herramientas para econometría aplicada (ej. variables instrumentales).
   lmtest,       # Pruebas de hipótesis para modelos de regresión (ej. coeftest).
   sandwich,     # Cálculo de errores estándar robustos a heterocedasticidad.
-  survey,       # Análisis de datos de encuestas complejas (ponderación, estratificación).
+  survey,       # Análisis de datos de encuestas complejas (ponderación, estratificación)
+  boot,
 
   # C) Importación, exportación y generación de reportes
   haven,        # Lectura y escritura de formatos de Stata, SAS y SPSS.
@@ -226,7 +227,7 @@ ggsave("Graficos/g3.png", g3, width = 8, height = 6, dpi = 300)
 Interprete el sentido y magnitud de la diferencia (¿cuánto más emiten los países de PIB alto?).Estime un intervalo de confianza del 95 % para esa diferencia usando un procedimiento Bootstrap y una prueba t. ¿Qué diferencia hay entre los resultados de Bootstrap y la prueba t?
 
 ```{r}
-### 3. DIFERENCIA PROMEDIO 
+### 3. DIFERENCIA PROMEDIO ---------------------- version Lau ------------------- 
 
 # Paso 0. Diferencia promedio 
 dif_media <- mean(d1$co2_2023, na.rm = TRUE) - mean(d2$co2_2023, na.rm = TRUE)
@@ -328,7 +329,185 @@ g4 <- ggplot(data = tibble(diff = boot_diff_res$t), aes(x = diff)) +
 
 ggsave("Graficos/g4.png", g4, width = 8, height = 6, dpi = 300)
 
+
 ```
+
+```{r}
+#----------------------------------- Version cami ----------------------------------
+
+#2.1 Estime la diferencia promedio de emisiones entre los grupos e interprete el sentido y magnitud de la diferencia 
+
+#Estadísticas de cada grupo 
+resultados_pib <- bind_rows(
+  d1 %>% summarise(
+    Grupo = "Alto PIB per cápita",
+    Media_Emisiones = mean(co2_2023, na.rm = TRUE),
+    N = n()
+  ),
+  d2 %>% summarise(
+    Grupo = "Bajo PIB per cápita",
+    Media_Emisiones = mean(co2_2023, na.rm = TRUE),
+    N = n()
+  )
+)
+
+#Calculamos las medias de cada grupo y su diferencia 
+media_alto <- resultados_pib %>% filter(Grupo == "Alto PIB per cápita") %>% pull(Media_Emisiones)
+
+media_bajo <- resultados_pib %>% filter(Grupo == "Bajo PIB per cápita") %>% pull(Media_Emisiones)
+
+diferencia_observada <- media_alto - media_bajo
+
+#Tabulamos 
+diferencia_fila <- data.frame(
+  Grupo = "Diferencia (Alto - Bajo)",
+  Media_Emisiones = diferencia_observada,
+  N = NA # N/A para la diferencia de medias
+)
+
+tabla_resultados <- bind_rows(resultados_pib, diferencia_fila) %>%
+  mutate(
+    Media_Emisiones = round(Media_Emisiones, 2)
+  )
+
+tabla_diferencia <- kable(
+  tabla_resultados,
+  format = "html",           
+  caption = "Diferencia Promedio de Emisiones de CO₂ per Cápita", 
+  col.names = c("Grupo de PIB", "Media de Emisiones (t CO₂/persona)", "N (Observaciones)"),
+  row.names = FALSE,         
+  align = 'lcc',
+)
+
+save_kable(
+  tabla_diferencia, 
+  file = "Graficos/tabla_ic.html"
+) #falta interpretación de esta diferencia tanto en el sentido como en la magnitud 
+
+
+
+# 2.2 Estime un intervalo de confianza del 95 % para esa diferencia usando un procedimiento Bootstrap y una prueba t
+
+#Procedimiento Bootstrap 
+datos_combinados <- bind_rows(
+  d1 %>% mutate(grupo = 1),  # 1 = Alto PIB
+  d2 %>% mutate(grupo = 0)   # 0 = Bajo PIB
+) %>%
+  filter(!is.na(co2_2023)) 
+
+#Creación de la función
+diferencia_boot <- function(data, indices) {
+  datos_b <- data[indices, ]
+  
+  media_alto <- datos_b %>% 
+    filter(grupo == 1) %>% 
+    summarise(mean(co2_2023)) %>% 
+    pull()
+    
+  media_bajo <- datos_b %>% 
+    filter(grupo == 0) %>% 
+    summarise(mean(co2_2023)) %>% 
+    pull()
+    
+  return(media_alto - media_bajo)
+}
+
+#Ejecución del remuestreo 
+set.seed(12345)
+B <- 1000
+boot_resultados <- boot(
+  data = datos_combinados, 
+  statistic = diferencia_boot, 
+  R = B 
+)
+
+#Calculamos el IC 
+ic_bootstrap_bca <- boot.ci(boot_resultados, type = "bca", conf = 0.95)
+
+#Tabulamos 
+limite_inferior_boot <- ic_bootstrap_bca$bca[4]
+limite_superior_boot <- ic_bootstrap_bca$bca[5]
+
+ic_formato_boot <- sprintf(
+  "[%.3f ; %.3f]", 
+  limite_inferior_boot, 
+  limite_superior_boot
+)
+
+tabla_ic <- data.frame(
+  Método = "Bootstrap BCa (95%)",
+  Estimación_Puntual = round(diferencia_observada, 3),
+  Intervalo_Confianza = ic_formato_boot
+)
+
+tabla_boot <- kable(
+  tabla_ic,
+  format = "html", 
+  caption = "Estimación e Intervalo de Confianza para la Diferencia Promedio de Emisiones",
+  col.names = c("Método", "Diferencia Media (t CO₂/persona)", "IC 95% (t CO₂/persona)"),
+  align = 'lcc' 
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"), 
+    full_width = F
+  )
+
+# Mostrar en la consola
+cat(tabla_boot)
+# Guardar la tabla en HTML (siguiendo su solicitud previa)
+save_kable(tabla_boot, file = "graficos/tabla_ic.html")
+
+
+#Prueba t (Welch)
+prueba_t <- t.test(
+  co2_2023 ~ grupo, 
+  data = datos_combinados, 
+  conf.level = 0.95,
+  var.equal = FALSE
+)
+
+#Invertimos el orden
+ic_t <- -prueba_t$conf.int[2:1] 
+limite_inferior_t <- ic_t[1]
+limite_superior_t <- ic_t[2]
+
+#Tabulacion
+ic_t_formato <- sprintf("[%.3f ; %.3f]", limite_inferior_t, limite_superior_t)
+ic_formato_boot <- sprintf("[%.3f ; %.3f]", limite_inferior_boot, limite_superior_boot)
+
+tabla_comparativa <- data.frame(
+  Método = c("Muestra Original", "Prueba t de Welch (95%)", "Bootstrap BCa (95%)"),
+  Estimacion_Puntual = c(round(diferencia_observada, 3), round(diferencia_observada, 3), round(diferencia_observada, 3)),
+  Intervalo_Confianza = c("N/A", ic_t_formato, ic_formato_boot)
+) %>%
+  rename(
+    Diferencia_Media = Estimacion_Puntual,
+    IC_95_porciento = Intervalo_Confianza
+  )
+
+tabla_final <- kable(
+  tabla_comparativa,
+  format = "html",
+  caption = "Comparación de Estimación Puntual e Intervalos de Confianza (IC) para la Diferencia de Emisiones",
+  align = 'lcc' 
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"), 
+    full_width = F,
+    position = "center"
+  ) %>%
+  row_spec(1, bold = TRUE, background = "#F0F0F0")
+
+# Mostrar y guardar la tabla
+cat("\nTabla de Resultados Comparados:\n")
+print(tabla_final)
+
+# Guardar en la ruta solicitada
+save_kable(tabla_final, file = "graficos/tabla_ic_comparada.html")
+
+```
+
+\
 
 El gráfico evidencia una relación positiva clara entre el nivel de ingreso y las emisiones per cápita. Los países con PIB alto emiten, en promedio, unas 6 toneladas más de CO₂ por persona que los países con PIB bajo, con alta confianza estadística (95%).
 
