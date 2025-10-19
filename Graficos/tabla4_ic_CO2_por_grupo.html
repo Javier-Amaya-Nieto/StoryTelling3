@@ -280,38 +280,30 @@ border: 0;
 
 </head>
 <body>
-<table class=" lightable-classic" style="font-family: Times New Roman; width: auto !important; margin-left: auto; margin-right: auto;">
-<caption>Tabla 1. Resumen descriptivo de PIB y CO₂ per cápita (2023)</caption>
+<table class="table table-striped table-hover" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>Comparación de Estimación Puntual e Intervalos de Confianza (IC) para la Diferencia de Emisiones</caption>
  <thead>
   <tr>
-   <th style="text-align:left;"> Indicador </th>
-   <th style="text-align:center;"> Valor </th>
+   <th style="text-align:left;"> Método </th>
+   <th style="text-align:center;"> Diferencia_Media </th>
+   <th style="text-align:center;"> IC_95_porciento </th>
   </tr>
  </thead>
 <tbody>
   <tr>
-   <td style="text-align:left;"> Número de países </td>
-   <td style="text-align:center;"> 239.00 </td>
+   <td style="text-align:left;font-weight: bold;background-color: rgba(240, 240, 240, 255) !important;"> Muestra Original </td>
+   <td style="text-align:center;font-weight: bold;background-color: rgba(240, 240, 240, 255) !important;"> 5.939 </td>
+   <td style="text-align:center;font-weight: bold;background-color: rgba(240, 240, 240, 255) !important;"> N/A </td>
   </tr>
   <tr>
-   <td style="text-align:left;"> Año de referencia </td>
-   <td style="text-align:center;"> 2023.00 </td>
+   <td style="text-align:left;"> Prueba t de Welch (95%) </td>
+   <td style="text-align:center;"> 5.939 </td>
+   <td style="text-align:center;"> [4.272 ; 7.606] </td>
   </tr>
   <tr>
-   <td style="text-align:left;"> PIB mínimo </td>
-   <td style="text-align:center;"> 192.07 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> PIB máximo </td>
-   <td style="text-align:center;"> 132604.44 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> CO₂ mínimo </td>
-   <td style="text-align:center;"> 0.00 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> CO₂ máximo </td>
-   <td style="text-align:center;"> 81.21 </td>
+   <td style="text-align:left;"> Bootstrap BCa (95%) </td>
+   <td style="text-align:center;"> 5.939 </td>
+   <td style="text-align:center;"> [4.700 ; 8.471] </td>
   </tr>
 </tbody>
 </table>
