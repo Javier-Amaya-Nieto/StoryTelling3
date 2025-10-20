@@ -9,7 +9,6 @@ output: html_document
 # Setup del ambiente
 
 ```{r, include=FALSE}
-# Instalando pacman si se requier
 if (!require("pacman")) install.packages("pacman")
 
 # Cargando los paquetes usando pacman
@@ -78,7 +77,7 @@ co2_2023 <- data_co2 %>%
 data_join <- left_join(pib_2023, co2_2023, by = "country_code") %>%
   drop_na()
 
-# Clasificación: Alto vs. Bajo PIB
+# Clasificación de los grupos
 data_join <- data_join %>%
   mutate(grupo_pib = if_else(
     pib_2023 >= median(pib_2023, na.rm = TRUE),
@@ -124,7 +123,7 @@ analisis_univariado %>%
 analisis_univariado
 
 
-# Estadísticas descriptivas por grupo de PIB- Tabla  --------------
+# Estadísticas descriptivas por grupo de PIB- Tabla  
 resumen <- data_join %>%
   group_by(grupo_pib) %>%
   summarise(
@@ -226,7 +225,7 @@ ggsave("Graficos/g3.png", g3, width = 8, height = 6, dpi = 300)
 Primero sacamos las medias de CO2 por grupo sin los IC
 
 ```{r}
-# Paso 0. Diferencia promedio 
+# Diferencia promedio 
 dif_media <- mean(d1$co2_2023, na.rm = TRUE) - mean(d2$co2_2023, na.rm = TRUE)
 
 #Estadísticas de cada grupo 
@@ -245,9 +244,7 @@ resultados_pib <- bind_rows(
 
 #Calculamos las medias de cada grupo y su diferencia 
 media_alto <- resultados_pib %>% filter(Grupo == "Alto PIB per cápita") %>% pull(Media_Emisiones)
-
 media_bajo <- resultados_pib %>% filter(Grupo == "Bajo PIB per cápita") %>% pull(Media_Emisiones)
-
 diferencia_observada <- media_alto - media_bajo
 
 #Tabulamos 
@@ -262,19 +259,20 @@ tabla_resultados <- bind_rows(resultados_pib, diferencia_fila) %>%
     Media_Emisiones = round(Media_Emisiones, 2)
   )
 
-tabla_diferencia <- kable(
-  tabla_resultados,
-  format = "html",           
-  caption = "Diferencia Promedio de Emisiones de CO₂ per Cápita", 
-  col.names = c("Grupo de PIB", "Media de Emisiones (t CO₂/persona)", "N (Observaciones)"),
-  row.names = FALSE,         
-  align = 'lcc',
-)
-
-save_kable(
-  tabla_diferencia, 
-  file = "Graficos/tabla3_media_CO2_altos_y_bajos.html"
-) #falta interpretación de esta diferencia tanto en el sentido como en la magnitud 
+tabla_diferencia <- tabla_resultados %>%
+  kbl(
+    caption = "Tabla 3. Diferencia Promedio de Emisiones de CO₂ per Cápita (t CO₂/persona)",
+    align = "lcc",
+    booktabs = TRUE,
+    digits = 2,
+    col.names = c("Grupo de PIB", "Media de Emisiones", "N (Observaciones)"),
+    row.names = FALSE 
+  ) %>%
+  kable_classic(
+    full_width = FALSE,
+    html_font = "Times New Roman"
+  ) %>%
+  save_kable("Graficos/tabla3_media_CO2_altos_y_bajos.html")
 
 ```
 
@@ -307,7 +305,7 @@ diferencia_boot <- function(data, indices) {
 
 #Ejecución del remuestreo 
 set.seed(12345)
-B <- 1000
+B <- 2000
 boot_resultados <- boot(
   data = datos_combinados, 
   statistic = diferencia_boot, 
@@ -316,6 +314,7 @@ boot_resultados <- boot(
 
 #Calculamos el IC 
 ic_bootstrap_bca <- boot.ci(boot_resultados, type = "bca", conf = 0.95)
+ic_bootstrap_percentil <- boot.ci(boot_resultados, type = "perc", conf = 0.95)
 
 #Tabulamos 
 limite_inferior_boot <- ic_bootstrap_bca$bca[4]
@@ -327,23 +326,6 @@ ic_formato_boot <- sprintf(
   limite_superior_boot
 )
 
-tabla_ic <- data.frame(
-  Método = "Bootstrap BCa (95%)",
-  Estimación_Puntual = round(diferencia_observada, 3),
-  Intervalo_Confianza = ic_formato_boot
-)
-
-tabla_boot <- kable(
-  tabla_ic,
-  format = "html", 
-  caption = "Estimación e Intervalo de Confianza para la Diferencia Promedio de Emisiones",
-  col.names = c("Método", "Diferencia Media (t CO₂/persona)", "IC 95% (t CO₂/persona)"),
-  align = 'lcc' 
-) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed"), 
-    full_width = F
-  )
 
 #Prueba t (Welch)
 prueba_t <- t.test(
@@ -353,64 +335,64 @@ prueba_t <- t.test(
   var.equal = FALSE
 )
 
-#Invertimos el orden
-ic_t <- -prueba_t$conf.int[2:1] 
-limite_inferior_t <- ic_t[1]
-limite_superior_t <- ic_t[2]
+#Selección de valores
+ic_t_welch <- -prueba_t$conf.int[2:1]
+ic_bca <- ic_bootstrap_bca$bca
 
-#Tabulacion
-ic_t_formato <- sprintf("[%.3f ; %.3f]", limite_inferior_t, limite_superior_t)
-ic_formato_boot <- sprintf("[%.3f ; %.3f]", limite_inferior_boot, limite_superior_boot)
+ic_t_formato <- paste0("[", round(ic_t_welch[1], 3), " ; ", round(ic_t_welch[2], 3), "]")
+ic_bca_formato <- paste0("[", round(ic_bca[4], 3), " ; ", round(ic_bca[5], 3), "]")
 
-tabla_comparativa <- data.frame(
-  Método = c("Muestra Original", "Prueba t de Welch (95%)", "Bootstrap BCa (95%)"),
-  Estimacion_Puntual = c(round(diferencia_observada, 3), round(diferencia_observada, 3), round(diferencia_observada, 3)),
-  Intervalo_Confianza = c("N/A", ic_t_formato, ic_formato_boot)
-) %>%
-  rename(
-    Diferencia_Media = Estimacion_Puntual,
-    IC_95_porciento = Intervalo_Confianza
-  )
+#Tabla final
+tabla_final_tibble <- tibble::tibble(
+  Método = c("Prueba t de Welch (95%)", "Bootstrap BCa (95%)"),
+  Estimación = round(diferencia_observada, 3), 
+  IC_95 = c(ic_t_formato, ic_bca_formato),
+  P_Valor = c(round(prueba_t$p.value, 4), "N/A") 
+)
 
-tabla_final <- kable(
-  tabla_comparativa,
-  format = "html",
-  caption = "Comparación de Estimación Puntual e Intervalos de Confianza (IC) para la Diferencia de Emisiones",
-  align = 'lcc' 
-) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover"), 
-    full_width = F,
-    position = "center"
+#Guardamos la tabla para exportar 
+tabla_final_tibble %>%
+  kbl(
+    caption = "Comparación entre Bootstrap y Prueba T para la diferencia de emisiones (t CO₂/persona)",
+    align = "lccc",
+    booktabs = TRUE
   ) %>%
-  row_spec(1, bold = TRUE, background = "#F0F0F0")
-
-# Mostrar y guardar la tabla
-cat("\nTabla de Resultados Comparados:\n")
-print(tabla_final)
-
-# Guardar en la ruta solicitada
-save_kable(tabla_final, file = "Graficos/tabla4_ic_CO2_por_grupo.html")
-
+  kable_classic(full_width = FALSE, html_font = "Times New Roman") %>%
+  save_kable("Graficos/tabla4_ic_comparativa.html")
 ```
 
-Ahora vamos a hacer un forrest plot de los estimadores y sus IC
-
+Ahora vamos a hacer un gráfico de distribución y un forest plot de los estimadores y sus IC
 
 
 ```{r}
-### 3. DIFERENCIA PROMEDIO
+### 3. Gráfico distribución
 
-# Gráfico de distribución bootstrap
-g4 <- ggplot(data = tibble(diff = boot_diff_res$t), aes(x = diff)) +
-  geom_histogram(aes(y = ..density..), bins = 50, fill = "#5B8FA8", alpha = 0.6, color = "white") +
-  geom_density(color = "#003366", size = 1.2) +
-  geom_vline(xintercept = mean(boot_diff_res$t), color = "#003366", size = 1.3) +
-  geom_vline(xintercept = c(ci_diff$percent[4], ci_diff$percent[5]), color = "#1B4F72", linetype = "dashed", size = 1) +
-  geom_vline(xintercept = c(ci_diff$bca[4], ci_diff$bca[5]), color = "#2874A6", linetype = "dotted", size = 1) +
+# Extracción de la distribución
+distribucion_bootstrap <- boot_resultados$t
+
+# Media Bootstrap (para la línea central)
+media_bootstrap <- mean(distribucion_bootstrap)
+
+# IC Percentil (líneas discontinuas, usado en su gráfico)
+limite_inferior_percentil <- ic_bootstrap_percentil$percent[4]
+limite_superior_percentil <- ic_bootstrap_percentil$percent[5]
+
+#Gráfico de distribución
+g4 <- ggplot(data = tibble(diff = distribucion_bootstrap), aes(x = diff)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "#5B8FA8", alpha = 0.6, color = "white") +
+  geom_density(color = "#003366", linewidth = 1) +
+  # Media Bootstrap
+  geom_vline(xintercept = media_bootstrap, color = "#003366", linewidth = 1) +
+  # IC Percentil (Líneas discontinuas)
+  geom_vline(xintercept = c(limite_inferior_percentil, limite_superior_percentil), 
+             color = "#1B4F72", linetype = "dashed", linewidth = 1) +
+  # IC BCa (Líneas punteadas)
+  geom_vline(xintercept = c(limite_inferior_boot, limite_superior_boot), 
+             color = "#2874A6", linetype = "dotted", linewidth = 1) +
   labs(
-    title = "Distribución de la diferencia de emisiones(PIB alto - PIB bajo)",
-    x = "Diferencia de medias de CO2 per cápita",
+    title = "Distribución Bootstrap de la Diferencia de Emisiones (PIB alto - PIB bajo)",
+    subtitle = paste0("IC 95% BCa: [", round(limite_inferior_boot, 3), " ; ", round(limite_superior_boot, 3), "]"),
+    x = "Diferencia de medias de CO₂ per cápita (t CO₂/persona)",
     y = "Densidad"
   ) +
   theme_minimal(base_size = 13, base_family = "Helvetica") +
@@ -424,41 +406,17 @@ g4 <- ggplot(data = tibble(diff = boot_diff_res$t), aes(x = diff)) +
 
 ggsave("Graficos/g4.png", g4, width = 8, height = 6, dpi = 300)
 
-# Paso 6. Tabla comparativa entre Bootstrap y prueba t
-tabla_comp <- tibble::tibble(
-  Método = c("Prueba t de Welch (95%)", "Bootstrap BCa (95%)"),
-  Estimación = round(mean(boot_diff_res$t), 2),
-  IC_95 = c(
-    paste(round(t_test_res$conf.int[1], 2), "–", round(t_test_res$conf.int[2], 2)),
-    paste(round(ci_diff$bca[4], 2), "–", round(ci_diff$bca[5], 2))
-  ),
-  p_valor = c(round(t_test_res$p.value, 4), "No aplica")
-)
+# Gráfico tipo forest plot
+estimacion_boot <- mean(distribucion_bootstrap)
+estimacion_t <- -(prueba_t$estimate[1] - prueba_t$estimate[2])
 
-tabla_comp %>%
-  kbl(
-    caption = "Comparación entre Bootstrap y prueba t para la diferencia de emisiones (t CO₂/persona)",
-    align = "lccc",
-    booktabs = TRUE
-  ) %>%
-  kable_classic(full_width = FALSE, html_font = "Times New Roman") %>%
-  save_kable("Graficos/tabla_comp.html")
-
-cat("\n✅ El intervalo de confianza NO incluye el valor 0, por lo que se rechaza H₀.")
-cat("\n✅ El p-valor es prácticamente 0, indicando evidencia fuerte de que los países con alto PIB per cápita emiten significativamente más CO₂ per cápita.\n")
-cat("✅ Tanto la prueba t como el método bootstrap conducen a la misma conclusión.\n")
-
-# Paso 7. Gráfico comparativo de estimaciones e intervalos 
-
-# Crear tabla con resultados para graficar
 resultados_plot <- tibble::tibble(
   Metodo = c("Bootstrap BCa (95%)", "Prueba t (95%)"),
-  Estimacion = c(mean(boot_diff_res$t), t_test_res$estimate[1] - t_test_res$estimate[2]),
-  IC_inf = c(ci_diff$bca[4], t_test_res$conf.int[1]),
-  IC_sup = c(ci_diff$bca[5], t_test_res$conf.int[2])
+  Estimacion = c(estimacion_boot, estimacion_t),
+  IC_inf = c(ic_bca[4], ic_t_welch[1]), 
+  IC_sup = c(ic_bca[5], ic_t_welch[2])
 )
 
-# Gráfico tipo forest plot
 g5 <- ggplot(resultados_plot, aes(x = Metodo, y = Estimacion)) +
   geom_point(size = 3, color = "#003366") +
   geom_errorbar(aes(ymin = IC_inf, ymax = IC_sup),
@@ -484,8 +442,6 @@ ggsave("Graficos/g5.png", g_forest, width = 8, height = 6, dpi = 300)
 
 ```
 
-
-El gráfico evidencia una relación positiva clara entre el nivel de ingreso y las emisiones per cápita. Los países con PIB alto emiten, en promedio, unas 6 toneladas más de CO₂ por persona que los países con PIB bajo, con alta confianza estadística (95%).
 
 #### Evaluación de la evidencia
 
