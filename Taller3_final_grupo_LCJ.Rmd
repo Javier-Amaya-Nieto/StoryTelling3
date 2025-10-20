@@ -41,7 +41,7 @@ pacman::p_load(
   stargazer,    # Creación de tablas de regresión con formato de publicación.
   knitr,        # Generación de reportes dinámicos.
   kableExtra,
-  webshot,
+  webshot
 )
 ```
 
@@ -360,4 +360,86 @@ tabla_final_tibble %>%
   kable_classic(full_width = FALSE, html_font = "Times New Roman") %>%
   save_kable("Graficos/tabla4_ic_comparativa.html")
 ```
+
+Ahora vamos a hacer un gráfico de distribución y un forest plot de los estimadores y sus IC
+
+
+```{r}
+### 3. Gráfico distribución
+
+# Extracción de la distribución
+distribucion_bootstrap <- boot_resultados$t
+
+# Media Bootstrap (para la línea central)
+media_bootstrap <- mean(distribucion_bootstrap)
+
+# IC Percentil (líneas discontinuas, usado en su gráfico)
+limite_inferior_percentil <- ic_bootstrap_percentil$percent[4]
+limite_superior_percentil <- ic_bootstrap_percentil$percent[5]
+
+#Gráfico de distribución
+g4 <- ggplot(data = tibble(diff = distribucion_bootstrap), aes(x = diff)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "#5B8FA8", alpha = 0.6, color = "white") +
+  geom_density(color = "#003366", linewidth = 1) +
+  # Media Bootstrap
+  geom_vline(xintercept = media_bootstrap, color = "#003366", linewidth = 1) +
+  # IC Percentil (Líneas discontinuas)
+  geom_vline(xintercept = c(limite_inferior_percentil, limite_superior_percentil), 
+             color = "#1B4F72", linetype = "dashed", linewidth = 1) +
+  # IC BCa (Líneas punteadas)
+  geom_vline(xintercept = c(limite_inferior_boot, limite_superior_boot), 
+             color = "#2874A6", linetype = "dotted", linewidth = 1) +
+  labs(
+    title = "Distribución Bootstrap de la Diferencia de Emisiones (PIB alto - PIB bajo)",
+    subtitle = paste0("IC 95% BCa: [", round(limite_inferior_boot, 3), " ; ", round(limite_superior_boot, 3), "]"),
+    x = "Diferencia de medias de CO₂ per cápita (t CO₂/persona)",
+    y = "Densidad"
+  ) +
+  theme_minimal(base_size = 13, base_family = "Helvetica") +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", color = "#003366", size = 14),
+    plot.subtitle = element_text(color = "#1B4F72", size = 11),
+    axis.title = element_text(face = "bold", color = "#003366"),
+    axis.text = element_text(color = "gray20")
+  )
+
+ggsave("Graficos/g4.png", g4, width = 8, height = 6, dpi = 300)
+
+# Gráfico tipo forest plot
+estimacion_boot <- mean(distribucion_bootstrap)
+estimacion_t <- -(prueba_t$estimate[1] - prueba_t$estimate[2])
+
+resultados_plot <- tibble::tibble(
+  Metodo = c("Bootstrap BCa (95%)", "Prueba t (95%)"),
+  Estimacion = c(estimacion_boot, estimacion_t),
+  IC_inf = c(ic_bca[4], ic_t_welch[1]), 
+  IC_sup = c(ic_bca[5], ic_t_welch[2])
+)
+
+g5 <- ggplot(resultados_plot, aes(x = Metodo, y = Estimacion)) +
+  geom_point(size = 3, color = "#003366") +
+  geom_errorbar(aes(ymin = IC_inf, ymax = IC_sup),
+                width = 0.2, color = "#003366", size = 1) +
+  coord_flip() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  theme_minimal(base_size = 13, base_family = "Helvetica") +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", color = "#003366", size = 14),
+    axis.title = element_text(face = "bold", color = "#003366"),
+    axis.text = element_text(color = "gray20")
+  ) +
+  labs(
+    title = "Comparación de estimaciones e intervalos de confianza (2023)",
+    subtitle = "Diferencia de medias de CO₂ per cápita: PIB alto - PIB bajo",
+    y = "Diferencia estimada (toneladas por persona)",
+    x = NULL
+  )
+
+# Guardar gráfico
+ggsave("Graficos/g5.png", g5, width = 8, height = 6, dpi = 300)
+
+```
+
 
